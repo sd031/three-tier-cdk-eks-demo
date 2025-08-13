@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Todo App - 3-Tier Architecture</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .container {
+            padding-top: 30px;
+        }
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+            background: rgba(255,255,255,0.95);
+        }
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px 15px 0 0 !important;
+            padding: 20px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 25px;
+            padding: 10px 30px;
+        }
+        .btn-success {
+            border-radius: 20px;
+        }
+        .btn-warning {
+            border-radius: 20px;
+        }
+        .btn-danger {
+            border-radius: 20px;
+        }
+        .todo-item {
+            transition: all 0.3s ease;
+            border-left: 4px solid #667eea;
+            margin-bottom: 10px;
+        }
+        .todo-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .todo-item.completed {
+            border-left-color: #28a745;
+            opacity: 0.8;
+        }
+        .todo-item.completed .todo-title {
+            text-decoration: line-through;
+            color: #6c757d;
+        }
+        .loading {
+            display: none;
+        }
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .status-connected {
+            background-color: #28a745;
+        }
+        .status-disconnected {
+            background-color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-10">
+                <div class="card">
+                    <div class="card-header text-center">
+                        <h1><i class="fas fa-tasks"></i> Todo Application</h1>
+                        <p class="mb-0">3-Tier Architecture: Frontend → Backend API → PostgreSQL</p>
+                    </div>
+                    <div class="card-body">
+                        <!-- Status and Add Todo Form -->
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <h4><i class="fas fa-plus-circle"></i> Add New Todo</h4>
+                                <form id="todoForm">
+                                    <div class="mb-3">
+                                        <label for="title" class="form-label">Title</label>
+                                        <input type="text" class="form-control" id="title" required placeholder="Enter todo title">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="description" class="form-label">Description</label>
+                                        <textarea class="form-control" id="description" rows="3" placeholder="Enter todo description (optional)"></textarea>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-plus"></i> Add Todo
+                                    </button>
+                                </form>
+                            </div>
+                            <div class="col-md-6">
+                                <h4><i class="fas fa-info-circle"></i> Application Status</h4>
+                                <div class="alert alert-info">
+                                    <strong>Backend Status:</strong> 
+                                    <span class="status-indicator" id="statusIndicator"></span>
+                                    <span id="backendStatus">Checking...</span><br>
+                                    <strong>Database:</strong> PostgreSQL<br>
+                                    <strong>Frontend:</strong> HTML/CSS/JS<br>
+                                    <strong>Total Todos:</strong> <span id="todoCount">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Todos List -->
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <h4><i class="fas fa-list"></i> My Todos</h4>
+                                    <div>
+                                        <button class="btn btn-outline-primary btn-sm" onclick="filterTodos('all')">All</button>
+                                        <button class="btn btn-outline-success btn-sm" onclick="filterTodos('completed')">Completed</button>
+                                        <button class="btn btn-outline-warning btn-sm" onclick="filterTodos('pending')">Pending</button>
+                                    </div>
+                                </div>
+                                <div class="loading text-center">
+                                    <i class="fas fa-spinner fa-spin fa-2x"></i>
+                                    <p>Loading todos...</p>
+                                </div>
+                                <div id="todosList"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Todo Modal -->
+    <div class="modal fade" id="editModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Todo</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editForm">
+                        <input type="hidden" id="editId">
+                        <div class="mb-3">
+                            <label for="editTitle" class="form-label">Title</label>
+                            <input type="text" class="form-control" id="editTitle" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editDescription" class="form-label">Description</label>
+                            <textarea class="form-control" id="editDescription" rows="3"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="editCompleted">
+                                <label class="form-check-label" for="editCompleted">
+                                    Completed
+                                </label>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="updateTodo()">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const API_BASE_URL = '/api';
+        let todos = [];
+        let currentFilter = 'all';
+        
+        // Check backend health
+        async function checkBackendHealth() {
+            try {
+                const response = await fetch('/health');
+                const data = await response.json();
+                document.getElementById('backendStatus').innerHTML = 'Connected';
+                document.getElementById('statusIndicator').className = 'status-indicator status-connected';
+            } catch (error) {
+                document.getElementById('backendStatus').innerHTML = 'Disconnected';
+                document.getElementById('statusIndicator').className = 'status-indicator status-disconnected';
+            }
+        }
+
+        // Load todos
+        async function loadTodos() {
+            const loading = document.querySelector('.loading');
+            const todosList = document.getElementById('todosList');
+            
+            loading.style.display = 'block';
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/todos`);
+                todos = await response.json();
+                
+                document.getElementById('todoCount').textContent = todos.length;
+                displayTodos();
+            } catch (error) {
+                todosList.innerHTML = '<div class="alert alert-danger">Error loading todos. Please check the backend connection.</div>';
+                console.error('Error loading todos:', error);
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        // Display todos based on current filter
+        function displayTodos() {
+            const todosList = document.getElementById('todosList');
+            let filteredTodos = todos;
+
+            if (currentFilter === 'completed') {
+                filteredTodos = todos.filter(todo => todo.completed);
+            } else if (currentFilter === 'pending') {
+                filteredTodos = todos.filter(todo => !todo.completed);
+            }
+
+            if (filteredTodos.length === 0) {
+                todosList.innerHTML = '<div class="alert alert-warning">No todos found. Add some todos to get started!</div>';
+                return;
+            }
+
+            todosList.innerHTML = filteredTodos.map(todo => `
+                <div class="card todo-item ${todo.completed ? 'completed' : ''}">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <h6 class="card-title todo-title mb-1">
+                                    <i class="fas ${todo.completed ? 'fa-check-circle text-success' : 'fa-circle text-muted'}"></i>
+                                    ${todo.title}
+                                </h6>
+                                ${todo.description ? `<p class="card-text text-muted mb-2">${todo.description}</p>` : ''}
+                                <small class="text-muted">
+                                    <i class="fas fa-calendar"></i> Created: ${new Date(todo.created_at).toLocaleDateString()}
+                                    ${todo.updated_at !== todo.created_at ? ` | Updated: ${new Date(todo.updated_at).toLocaleDateString()}` : ''}
+                                </small>
+                            </div>
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-sm ${todo.completed ? 'btn-warning' : 'btn-success'}" 
+                                        onclick="toggleTodo(${todo.id})" 
+                                        title="${todo.completed ? 'Mark as pending' : 'Mark as completed'}">
+                                    <i class="fas ${todo.completed ? 'fa-undo' : 'fa-check'}"></i>
+                                </button>
+                                <button class="btn btn-sm btn-primary" onclick="editTodo(${todo.id})" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-sm btn-danger" onclick="deleteTodo(${todo.id})" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Filter todos
+        function filterTodos(filter) {
+            currentFilter = filter;
+            displayTodos();
+            
+            // Update button states
+            document.querySelectorAll('.btn-outline-primary, .btn-outline-success, .btn-outline-warning').forEach(btn => {
+                btn.className = btn.className.replace('btn-outline-', 'btn-outline-');
+            });
+        }
+
+        // Add todo
+        document.getElementById('todoForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const title = document.getElementById('title').value;
+            const description = document.getElementById('description').value;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/todos`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ title, description }),
+                });
+                
+                if (response.ok) {
+                    document.getElementById('todoForm').reset();
+                    loadTodos();
+                    showAlert('Todo added successfully!', 'success');
+                } else {
+                    const error = await response.json();
+                    showAlert('Error: ' + error.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error adding todo. Please try again.', 'danger');
+                console.error('Error adding todo:', error);
+            }
+        });
+
+        // Toggle todo completion
+        async function toggleTodo(id) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/todos/${id}/toggle`, {
+                    method: 'PATCH',
+                });
+                
+                if (response.ok) {
+                    loadTodos();
+                    showAlert('Todo status updated!', 'success');
+                } else {
+                    showAlert('Error updating todo status.', 'danger');
+                }
+            } catch (error) {
+                showAlert('Error updating todo. Please try again.', 'danger');
+                console.error('Error toggling todo:', error);
+            }
+        }
+
+        // Edit todo
+        function editTodo(id) {
+            const todo = todos.find(t => t.id === id);
+            if (!todo) return;
+
+            document.getElementById('editId').value = todo.id;
+            document.getElementById('editTitle').value = todo.title;
+            document.getElementById('editDescription').value = todo.description || '';
+            document.getElementById('editCompleted').checked = todo.completed;
+
+            new bootstrap.Modal(document.getElementById('editModal')).show();
+        }
+
+        // Update todo
+        async function updateTodo() {
+            const id = document.getElementById('editId').value;
+            const title = document.getElementById('editTitle').value;
+            const description = document.getElementById('editDescription').value;
+            const completed = document.getElementById('editCompleted').checked;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/todos/${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ title, description, completed }),
+                });
+                
+                if (response.ok) {
+                    bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+                    loadTodos();
+                    showAlert('Todo updated successfully!', 'success');
+                } else {
+                    const error = await response.json();
+                    showAlert('Error: ' + error.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error updating todo. Please try again.', 'danger');
+                console.error('Error updating todo:', error);
+            }
+        }
+
+        // Delete todo
+        async function deleteTodo(id) {
+            if (!confirm('Are you sure you want to delete this todo?')) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/todos/${id}`, {
+                    method: 'DELETE',
+                });
+                
+                if (response.ok) {
+                    loadTodos();
+                    showAlert('Todo deleted successfully!', 'success');
+                } else {
+                    showAlert('Error deleting todo.', 'danger');
+                }
+            } catch (error) {
+                showAlert('Error deleting todo. Please try again.', 'danger');
+                console.error('Error deleting todo:', error);
+            }
+        }
+
+        // Show alert
+        function showAlert(message, type) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+            alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.body.appendChild(alertDiv);
+
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.parentNode.removeChild(alertDiv);
+                }
+            }, 5000);
+        }
+
+        // Initialize
+        checkBackendHealth();
+        loadTodos();
+        
+        // Refresh every 30 seconds
+        setInterval(() => {
+            checkBackendHealth();
+        }, 30000);
+    </script>
+</body>
+</html>

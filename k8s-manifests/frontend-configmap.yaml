@@ -1,0 +1,4 @@
+# This ConfigMap is no longer needed as we're using Docker images
+# The frontend code is now built into the todo-frontend Docker image
+# The nginx configuration is also included in the Docker image
+# Remove this file or keep it for reference only

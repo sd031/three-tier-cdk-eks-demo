@@ -1,0 +1,40 @@
+apiVersion: skaffold/v4beta7
+kind: Config
+metadata:
+  name: todo-app
+build:
+  artifacts:
+  - image: todo-backend
+    context: backend
+    docker:
+      dockerfile: Dockerfile
+  - image: todo-frontend
+    context: frontend
+    docker:
+      dockerfile: Dockerfile
+  local:
+    push: false
+deploy:
+  kubectl:
+    manifests:
+    - k8s-local/namespace.yaml
+    - k8s-local/postgres.yaml
+    - k8s-local/backend.yaml
+    - k8s-local/frontend.yaml
+    - k8s-local/ingress.yaml
+portForward:
+- resourceType: service
+  resourceName: frontend-service
+  namespace: todo-app
+  port: 80
+  localPort: 8080
+- resourceType: service
+  resourceName: backend-service
+  namespace: todo-app
+  port: 3000
+  localPort: 3000
+- resourceType: service
+  resourceName: postgres-service
+  namespace: todo-app
+  port: 5432
+  localPort: 5432
