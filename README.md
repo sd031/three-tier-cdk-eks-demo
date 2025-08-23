@@ -1,6 +1,6 @@
 # Todo App - 3-Tier Application on Amazon EKS with AWS CDK
 
-This project demonstrates how to deploy a complete 3-tier Todo application on Amazon EKS (Elastic Kubernetes Service) using AWS CDK (Cloud Development Kit) with Python. Features both local development with KinD/Skaffold and production deployment on EKS Auto Mode.
+This project demonstrates how to deploy a complete 3-tier Todo application on Amazon EKS (Elastic Kubernetes Service) using AWS CDK (Cloud Development Kit) with TypeScript. Features both local development with KinD/Skaffold and production deployment on EKS Auto Mode with in-cluster PostgreSQL database.
 
 ## Architecture Overview
 
@@ -10,9 +10,9 @@ This project demonstrates how to deploy a complete 3-tier Todo application on Am
 │     Tier        │    │      Tier       │    │      Tier       │
 │                 │    │                 │    │                 │
 │   Todo Frontend │◄──►│   Todo API      │◄──►│   PostgreSQL    │
-│   (HTML/CSS/JS) │    │   (Node.js)     │    │     (RDS)       │
+│   (HTML/CSS/JS) │    │   (Node.js)     │    │   (In-Cluster)  │
 │                 │    │                 │    │                 │
-│   EKS Auto Mode │    │   EKS Auto Mode │    │   RDS Instance  │
+│   EKS Auto Mode │    │   EKS Auto Mode │    │   EKS Auto Mode │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
          │                       │                       │
          └───────────────────────┼───────────────────────┘
@@ -29,14 +29,14 @@ This project demonstrates how to deploy a complete 3-tier Todo application on Am
 ### Infrastructure (AWS CDK)
 - **VPC**: Multi-AZ VPC with public, private, and database subnets
 - **EKS Auto Mode Cluster**: Fully managed Kubernetes cluster with automatic compute, networking, and storage management
-- **RDS PostgreSQL**: Managed database in private subnets
+- **PostgreSQL Database**: In-cluster PostgreSQL with persistent storage
 - **Security Groups**: Proper network isolation and access control
 - **IAM Roles**: Service accounts and permissions for AWS Load Balancer Controller
 
 ### Application Tiers
 1. **Presentation Tier**: Todo Frontend (HTML/CSS/JavaScript) served by Nginx in Docker container
 2. **Application Tier**: Todo API (Node.js/Express) with full CRUD operations in Docker container
-3. **Data Tier**: PostgreSQL database on Amazon RDS
+3. **Data Tier**: PostgreSQL database running in EKS cluster with persistent volumes
 
 ## Prerequisites
 
@@ -45,7 +45,8 @@ Before you begin, ensure you have the following installed and configured:
 ### Required Tools
 - **AWS CLI v2**: [Installation Guide](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html)
 - **AWS CDK**: Install globally with `npm install -g aws-cdk`
-- **Python 3.8+**: [Download Python](https://www.python.org/downloads/)
+- **Node.js 18+**: [Download Node.js](https://nodejs.org/)
+- **TypeScript**: Install globally with `npm install -g typescript`
 - **kubectl**: [Installation Guide](https://kubernetes.io/docs/tasks/tools/)
 - **jq**: JSON processor for shell scripts
 
@@ -84,12 +85,11 @@ jq --version
 # Navigate to the project directory
 cd /Users/sandipdas/cdk_eks
 
-# Create and activate a Python virtual environment
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+# Navigate to the CDK TypeScript project
+cd cdk-eks-typescript
 
-# Install Python dependencies
-pip install -r requirements.txt
+# Install TypeScript dependencies
+npm install
 ```
 
 ### Step 2: Bootstrap AWS CDK (First-time setup)
@@ -103,16 +103,19 @@ cdk bootstrap
 
 ### Step 3: Review and Customize the Infrastructure
 
-The main infrastructure code is in `three_tier_eks/three_tier_eks_stack.py`. Key components:
+The main infrastructure code is in `cdk-eks-typescript/lib/cdk-eks-typescript-stack.ts`. Key components:
 
 - **VPC Configuration**: 3 AZs with public, private, and database subnets
-- **EKS Auto Mode Cluster**: Kubernetes v1.30 with automatic compute management (no manual node groups needed)
-- **RDS Database**: PostgreSQL 15.3 with automated backups
+- **EKS Auto Mode Cluster**: Kubernetes v1.32 with automatic compute management (no manual node groups needed)
+- **In-Cluster Database**: PostgreSQL 15 with persistent volumes and secrets management
 - **Security**: Proper security groups and IAM roles
 
 ### Step 4: Deploy the Infrastructure
 
 ```bash
+# Navigate to the CDK TypeScript directory
+cd cdk-eks-typescript
+
 # Synthesize the CloudFormation template (optional - for review)
 cdk synth
 
@@ -129,8 +132,7 @@ cdk deploy
 
 Outputs:
 ThreeTierEksStack.ClusterName = ThreeTierEksStack-ThreeTierCluster12345678
-ThreeTierEksStack.DatabaseEndpoint = database-instance.abc123.us-west-2.rds.amazonaws.com
-ThreeTierEksStack.DatabaseSecretArn = arn:aws:secretsmanager:us-west-2:123456789012:secret:...
+ThreeTierEksStack.EksClusterEndpoint = https://ABC123DEF456.gr7.us-west-2.eks.amazonaws.com
 ThreeTierEksStack.VpcId = vpc-0123456789abcdef0
 ```
 
@@ -154,16 +156,26 @@ REGION="us-west-2"  # Replace with your region
 ### Step 6: Deploy the 3-Tier Application
 
 ```bash
-# Get the database secret ARN from CDK outputs
-DB_SECRET_ARN="arn:aws:secretsmanager:us-west-2:123456789012:secret:..."  # Replace with your actual ARN
+# Update kubeconfig to connect to your EKS cluster
+aws eks update-kubeconfig --region $REGION --name $CLUSTER_NAME
+
+# Deploy the database first
+kubectl apply -f k8s-manifests/namespace.yaml
+kubectl apply -f k8s-manifests/postgres-secret.yaml
+kubectl apply -f k8s-manifests/postgres-deployment.yaml
+
+# Wait for database to be ready
+kubectl wait --for=condition=ready pod -l app=postgres -n todo-app --timeout=300s
 
 # Deploy the application
-./scripts/deploy-app.sh $CLUSTER_NAME $REGION $DB_SECRET_ARN
+kubectl apply -f k8s-manifests/backend-deployment.yaml
+kubectl apply -f k8s-manifests/frontend-deployment.yaml
+kubectl apply -f k8s-manifests/ingress.yaml
 ```
 
-**What this script does:**
-1. Retrieves database credentials from AWS Secrets Manager
-2. Creates Kubernetes namespace and secrets
+**What this does:**
+1. Creates Kubernetes namespace and database secrets
+2. Deploys PostgreSQL database with persistent storage
 3. Deploys backend API (Node.js/Express)
 4. Deploys frontend application (HTML/Nginx)
 5. Creates Application Load Balancer ingress
@@ -173,23 +185,24 @@ DB_SECRET_ARN="arn:aws:secretsmanager:us-west-2:123456789012:secret:..."  # Repl
 
 ```bash
 # Check pod status
-kubectl get pods -n three-tier-app
+kubectl get pods -n todo-app
 
 # Check services
-kubectl get services -n three-tier-app
+kubectl get services -n todo-app
 
 # Check ingress and get the URL
-kubectl get ingress -n three-tier-app
+kubectl get ingress -n todo-app
 
 # View application logs
-kubectl logs -f deployment/backend-api -n three-tier-app
-kubectl logs -f deployment/frontend-app -n three-tier-app
+kubectl logs -f deployment/backend-api -n todo-app
+kubectl logs -f deployment/frontend-app -n todo-app
+kubectl logs -f deployment/postgres -n todo-app
 ```
 
 **Expected Pod Status:**
 ```
 NAME                           READY   STATUS    RESTARTS   AGE
-backend-api-7d4b8c9f8d-abc12   1/1     Running   0          5m
+postgres-7d4b8c9f8d-abc12      1/1     Running   0          8m
 backend-api-7d4b8c9f8d-def34   1/1     Running   0          5m
 backend-api-7d4b8c9f8d-ghi56   1/1     Running   0          5m
 frontend-app-6b7c8d9e0f-jkl78  1/1     Running   0          5m
@@ -266,36 +279,37 @@ See [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) for detailed local development 
 
 ```bash
 # View all resources in the application namespace
-kubectl get all -n three-tier-app
+kubectl get all -n todo-app
 
 # Check pod logs
-kubectl logs -f deployment/backend-api -n three-tier-app
-kubectl logs -f deployment/frontend-app -n three-tier-app
+kubectl logs -f deployment/backend-api -n todo-app
+kubectl logs -f deployment/frontend-app -n todo-app
+kubectl logs -f deployment/postgres -n todo-app
 
 # Describe a pod for troubleshooting
-kubectl describe pod <pod-name> -n three-tier-app
+kubectl describe pod <pod-name> -n todo-app
 
 # Check ingress status
-kubectl describe ingress three-tier-ingress -n three-tier-app
+kubectl describe ingress todo-ingress -n todo-app
 
-# Connect to the database (from a pod)
-kubectl exec -it deployment/backend-api -n three-tier-app -- /bin/sh
+# Connect to the database directly
+kubectl exec -it deployment/postgres -n todo-app -- psql -U postgres -d tododb
 ```
 
 ### Database Connection Testing
 
 ```bash
-# Get database credentials
-aws secretsmanager get-secret-value --secret-id <SECRET_ARN> --region <REGION>
+# Connect to PostgreSQL directly
+kubectl exec -it deployment/postgres -n todo-app -- psql -U postgres -d tododb
 
 # Test connection from a backend pod
-kubectl exec -it deployment/backend-api -n three-tier-app -- node -e "
+kubectl exec -it deployment/backend-api -n todo-app -- node -e "
 const { Pool } = require('pg');
 const pool = new Pool({
-  host: process.env.DB_HOST,
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+  host: 'postgres-service',
+  database: 'tododb',
+  user: 'postgres',
+  password: 'password',
   port: 5432,
 });
 pool.query('SELECT * FROM todos LIMIT 5', (err, res) => {
@@ -304,6 +318,10 @@ pool.query('SELECT * FROM todos LIMIT 5', (err, res) => {
   process.exit(0);
 });
 "
+
+# Check database storage
+kubectl get pvc -n todo-app
+kubectl describe pvc postgres-pvc -n todo-app
 ```
 
 ### Scaling the Application
@@ -312,14 +330,15 @@ With EKS Auto Mode, scaling is handled automatically, but you can also manually 
 
 ```bash
 # Scale backend pods
-kubectl scale deployment backend-api --replicas=5 -n three-tier-app
+kubectl scale deployment backend-api --replicas=5 -n todo-app
 
 # Scale frontend pods
-kubectl scale deployment frontend-app --replicas=3 -n three-tier-app
+kubectl scale deployment frontend-app --replicas=3 -n todo-app
 
+# Note: Database should remain at 1 replica for data consistency
 # EKS Auto Mode will automatically provision nodes as needed
 # Check pod status
-kubectl get pods -n three-tier-app -w
+kubectl get pods -n todo-app -w
 ```
 
 ## Security Best Practices
@@ -337,25 +356,29 @@ This deployment implements several security best practices:
    - Kubernetes RBAC for service accounts
 
 3. **Secrets Management**:
-   - Database credentials stored in AWS Secrets Manager
-   - Kubernetes secrets for application configuration
+   - Database credentials stored in Kubernetes secrets
+   - Base64 encoded sensitive configuration data
 
 4. **Encryption**:
-   - RDS encryption at rest
+   - Persistent volume encryption at rest
    - EKS encryption for etcd and secrets
 
 ## Cost Optimization
 
 ### Resource Sizing
 - **EKS Auto Mode**: Automatic scaling from 0-1000 nodes (m5.large, m5.xlarge, m4.large)
-- **RDS Instance**: t3.micro (1 vCPU, 1GB RAM)
+- **PostgreSQL Pod**: 512Mi-1Gi memory, 250m-500m CPU
 - **Load Balancer**: Application Load Balancer (pay per use)
 
 ### Cost Monitoring
 ```bash
 # Check resource utilization
 kubectl top nodes
-kubectl top pods -n three-tier-app
+kubectl top pods -n todo-app
+
+# Check persistent volume usage
+kubectl get pv
+kubectl describe pv <pv-name>
 
 # View AWS costs in the console or use AWS CLI
 aws ce get-cost-and-usage --time-period Start=2023-01-01,End=2023-01-31 --granularity MONTHLY --metrics BlendedCost
@@ -364,12 +387,14 @@ aws ce get-cost-and-usage --time-period Start=2023-01-01,End=2023-01-31 --granul
 ## Project Structure
 
 ```
-├── app.py                           # CDK app entry point (Python)
-├── requirements.txt                 # Python dependencies
-├── cdk.json                        # CDK configuration
-├── three_tier_eks/
-│   ├── __init__.py
-│   └── three_tier_eks_stack.py     # EKS Auto Mode stack
+├── cdk-eks-typescript/              # CDK TypeScript project
+│   ├── bin/
+│   │   └── cdk-eks-typescript.ts   # CDK app entry point
+│   ├── lib/
+│   │   └── cdk-eks-typescript-stack.ts  # EKS Auto Mode stack
+│   ├── package.json                # TypeScript dependencies
+│   ├── tsconfig.json               # TypeScript configuration
+│   └── cdk.json                    # CDK configuration
 ├── backend/                        # Todo API (Docker)
 │   ├── server.js                   # Node.js/Express server
 │   ├── package.json               # Dependencies
@@ -380,7 +405,8 @@ aws ce get-cost-and-usage --time-period Start=2023-01-01,End=2023-01-31 --granul
 │   └── Dockerfile                 # Frontend container
 ├── k8s-manifests/                  # AWS EKS manifests
 │   ├── namespace.yaml
-│   ├── database-secret.yaml
+│   ├── postgres-secret.yaml
+│   ├── postgres-deployment.yaml
 │   ├── backend-deployment.yaml
 │   ├── frontend-deployment.yaml
 │   └── ingress.yaml
@@ -413,9 +439,10 @@ To avoid ongoing AWS charges, clean up the resources:
 ### AWS Resources Cleanup
 ```bash
 # Delete the Kubernetes application
-kubectl delete namespace three-tier-app
+kubectl delete namespace todo-app
 
-# Delete the CDK stack (this will remove all AWS resources)
+# Navigate to CDK directory and delete the stack
+cd cdk-eks-typescript
 cdk destroy
 
 # Confirm deletion when prompted
@@ -454,22 +481,28 @@ kubectl describe serviceaccount aws-load-balancer-controller -n kube-system
 #### 4. Database Connection Issues
 ```bash
 # Check if database is accessible from pods
-kubectl exec -it deployment/backend-api -n three-tier-app -- nslookup $DB_HOST
+kubectl exec -it deployment/backend-api -n todo-app -- nslookup postgres-service
 
-# Verify security group rules
-aws ec2 describe-security-groups --group-ids sg-xxxxxxxxx
+# Test database connectivity
+kubectl exec -it deployment/postgres -n todo-app -- pg_isready -U postgres
+
+# Check persistent volume status
+kubectl get pv,pvc -n todo-app
 ```
 
 #### 5. Application Not Loading
 ```bash
 # Check ingress status
-kubectl get ingress -n three-tier-app
+kubectl get ingress -n todo-app
 
 # Verify ALB is created
 aws elbv2 describe-load-balancers
 
 # Check target group health
 aws elbv2 describe-target-health --target-group-arn arn:aws:elasticloadbalancing:...
+
+# Check all pods are running
+kubectl get pods -n todo-app
 ```
 
 ## Advanced Configurations

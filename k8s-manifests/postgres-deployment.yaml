@@ -1,23 +1,4 @@
 apiVersion: v1
-kind: Secret
-metadata:
-  name: postgres-secret
-  namespace: todo-app
-type: Opaque
-data:
-  POSTGRES_DB: dG9kb2Ri  # tododb
-  POSTGRES_USER: cG9zdGdyZXM=  # postgres
-  POSTGRES_PASSWORD: cGFzc3dvcmQ=  # password
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: postgres-config
-  namespace: todo-app
-data:
-  POSTGRES_DB: tododb
----
-apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: postgres-pvc
@@ -25,17 +6,23 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
+  storageClassName: gp3-csi
   resources:
     requests:
-      storage: 1Gi
+      storage: 20Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: postgres
   namespace: todo-app
+  labels:
+    app: postgres
+    tier: database
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: postgres
@@ -43,12 +30,14 @@ spec:
     metadata:
       labels:
         app: postgres
+        tier: database
     spec:
       containers:
       - name: postgres
         image: postgres:15-alpine
         ports:
         - containerPort: 5432
+          name: postgres
         env:
         - name: POSTGRES_DB
           valueFrom:
@@ -65,16 +54,34 @@ spec:
             secretKeyRef:
               name: postgres-secret
               key: POSTGRES_PASSWORD
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
         volumeMounts:
         - name: postgres-storage
           mountPath: /var/lib/postgresql/data
         resources:
           requests:
-            memory: "256Mi"
+            memory: "512Mi"
             cpu: "250m"
           limits:
-            memory: "512Mi"
+            memory: "1Gi"
             cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 5
+          periodSeconds: 5
       volumes:
       - name: postgres-storage
         persistentVolumeClaim:
@@ -85,10 +92,15 @@ kind: Service
 metadata:
   name: postgres-service
   namespace: todo-app
+  labels:
+    app: postgres
+    tier: database
 spec:
   selector:
     app: postgres
   ports:
   - port: 5432
     targetPort: 5432
+    protocol: TCP
+    name: postgres
   type: ClusterIP
