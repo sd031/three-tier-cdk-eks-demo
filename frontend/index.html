@@ -189,7 +189,7 @@
         // Check backend health
         async function checkBackendHealth() {
             try {
-                const response = await fetch('/health');
+                const response = await fetch('/api/health');
                 const data = await response.json();
                 document.getElementById('backendStatus').innerHTML = 'Connected';
                 document.getElementById('statusIndicator').className = 'status-indicator status-connected';

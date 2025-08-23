@@ -1,0 +1,48 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-init-job
+  namespace: todo-app
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      name: db-init-job
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: db-init
+          image: postgres:15-alpine
+          env:
+            - name: PGHOST
+              valueFrom:
+                secretKeyRef:
+                  name: database-secret
+                  key: DB_HOST
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: database-secret
+                  key: DB_NAME
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: database-secret
+                  key: DB_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: database-secret
+                  key: DB_PASSWORD
+          volumeMounts:
+            - name: init-sql
+              mountPath: /init
+          command: ["sh", "-c"]
+          args: ["psql -v ON_ERROR_STOP=1 -f /init/init.sql"]
+      volumes:
+        - name: init-sql
+          configMap:
+            name: db-init-sql
+            items:
+              - key: init.sql
+                path: init.sql

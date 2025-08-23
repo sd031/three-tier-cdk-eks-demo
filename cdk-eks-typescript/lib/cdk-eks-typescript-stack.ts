@@ -64,6 +64,17 @@ export class CdkEksTypescriptStack extends cdk.Stack {
       }),
     ]);
 
+    // Grant cluster admin access to current deployer
+    // This will be resolved at deployment time using the CDK context
+    const deployerArn = this.node.tryGetContext('deployerArn') || 
+                       `arn:aws:iam::${account}:user/your_aws_user_name_here`;
+    
+    eksCluster.grantAccess('currentDeployerAccess', deployerArn, [
+      eks.AccessPolicy.fromAccessPolicyName('AmazonEKSClusterAdminPolicy', {
+        accessScopeType: eks.AccessScopeType.CLUSTER,
+      }),
+    ]);
+
     // Create AWS Load Balancer Controller service account
     const albServiceAccount = eksCluster.addServiceAccount('ALBServiceAccount', {
       name: 'aws-load-balancer-controller',
