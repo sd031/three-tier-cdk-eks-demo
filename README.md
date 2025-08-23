@@ -1,6 +1,6 @@
-# 3-Tier Application Deployment on Amazon EKS with AWS CDK
+# Todo App - 3-Tier Application on Amazon EKS with AWS CDK
 
-This project demonstrates how to deploy a complete 3-tier web application on Amazon EKS (Elastic Kubernetes Service) using AWS CDK (Cloud Development Kit) with Python.
+This project demonstrates how to deploy a complete 3-tier Todo application on Amazon EKS (Elastic Kubernetes Service) using AWS CDK (Cloud Development Kit) with Python. Features both local development with KinD/Skaffold and production deployment on EKS Auto Mode.
 
 ## Architecture Overview
 
@@ -9,10 +9,10 @@ This project demonstrates how to deploy a complete 3-tier web application on Ama
 │  Presentation   │    │   Application   │    │      Data       │
 │     Tier        │    │      Tier       │    │      Tier       │
 │                 │    │                 │    │                 │
-│   React/HTML    │◄──►│   Node.js API   │◄──►│   PostgreSQL    │
-│   (Frontend)    │    │   (Backend)     │    │     (RDS)       │
+│   Todo Frontend │◄──►│   Todo API      │◄──►│   PostgreSQL    │
+│   (HTML/CSS/JS) │    │   (Node.js)     │    │     (RDS)       │
 │                 │    │                 │    │                 │
-│   EKS Pods      │    │   EKS Pods      │    │   RDS Instance  │
+│   EKS Auto Mode │    │   EKS Auto Mode │    │   RDS Instance  │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
          │                       │                       │
          └───────────────────────┼───────────────────────┘
@@ -34,8 +34,8 @@ This project demonstrates how to deploy a complete 3-tier web application on Ama
 - **IAM Roles**: Service accounts and permissions for AWS Load Balancer Controller
 
 ### Application Tiers
-1. **Presentation Tier**: HTML/CSS/JavaScript frontend served by Nginx
-2. **Application Tier**: Node.js/Express REST API
+1. **Presentation Tier**: Todo Frontend (HTML/CSS/JavaScript) served by Nginx in Docker container
+2. **Application Tier**: Todo API (Node.js/Express) with full CRUD operations in Docker container
 3. **Data Tier**: PostgreSQL database on Amazon RDS
 
 ## Prerequisites
@@ -208,29 +208,57 @@ Open this URL in your browser to access the 3-tier application.
 
 ## Application Features
 
-The deployed application includes:
+The deployed Todo application includes:
 
 ### Frontend Features
-- **Modern UI**: Bootstrap-based responsive design
+- **Modern UI**: Bootstrap-based responsive design with gradient styling
 - **Real-time Status**: Backend connectivity indicator
-- **User Management**: Add, view, and delete users
+- **Todo Management**: Full CRUD operations (Create, Read, Update, Delete)
+- **Filter Options**: View All, Completed, or Pending todos
 - **Auto-refresh**: Periodic updates every 30 seconds
+- **Responsive Design**: Works on desktop and mobile devices
 
 ### Backend API Endpoints
 - `GET /health` - Health check endpoint
-- `GET /api/users` - Retrieve all users
-- `POST /api/users` - Create a new user
-- `DELETE /api/users/:id` - Delete a user by ID
+- `GET /api/todos` - Retrieve all todos
+- `GET /api/todos/:id` - Get specific todo
+- `POST /api/todos` - Create a new todo
+- `PUT /api/todos/:id` - Update a todo
+- `DELETE /api/todos/:id` - Delete a todo
+- `PATCH /api/todos/:id/toggle` - Toggle completion status
 
 ### Database Schema
 ```sql
-CREATE TABLE users (
+CREATE TABLE todos (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    email VARCHAR(100) UNIQUE NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    completed BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
+
+## Local Development
+
+For local development and testing, this project includes a complete setup with KinD (Kubernetes in Docker) and Skaffold:
+
+### Quick Start - Local Development
+
+```bash
+# Setup local Kubernetes cluster
+./scripts/setup-local-dev.sh
+
+# Start development mode with hot reload
+skaffold dev
+
+# Access the application
+# Frontend: http://localhost:8080
+# Backend API: http://localhost:3000
+# Database: localhost:5432
+```
+
+See [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) for detailed local development instructions.
 
 ## Monitoring and Troubleshooting
 
@@ -241,7 +269,8 @@ CREATE TABLE users (
 kubectl get all -n three-tier-app
 
 # Check pod logs
-kubectl logs -f <pod-name> -n three-tier-app
+kubectl logs -f deployment/backend-api -n three-tier-app
+kubectl logs -f deployment/frontend-app -n three-tier-app
 
 # Describe a pod for troubleshooting
 kubectl describe pod <pod-name> -n three-tier-app
@@ -250,7 +279,7 @@ kubectl describe pod <pod-name> -n three-tier-app
 kubectl describe ingress three-tier-ingress -n three-tier-app
 
 # Connect to the database (from a pod)
-kubectl exec -it <backend-pod-name> -n three-tier-app -- /bin/sh
+kubectl exec -it deployment/backend-api -n three-tier-app -- /bin/sh
 ```
 
 ### Database Connection Testing
@@ -269,15 +298,17 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD,
   port: 5432,
 });
-pool.query('SELECT NOW()', (err, res) => {
+pool.query('SELECT * FROM todos LIMIT 5', (err, res) => {
   if (err) console.error(err);
-  else console.log('Connected:', res.rows[0]);
+  else console.log('Connected. Sample todos:', res.rows);
   process.exit(0);
 });
 "
 ```
 
 ### Scaling the Application
+
+With EKS Auto Mode, scaling is handled automatically, but you can also manually scale:
 
 ```bash
 # Scale backend pods
@@ -286,8 +317,9 @@ kubectl scale deployment backend-api --replicas=5 -n three-tier-app
 # Scale frontend pods
 kubectl scale deployment frontend-app --replicas=3 -n three-tier-app
 
-# Check horizontal pod autoscaler (if configured)
-kubectl get hpa -n three-tier-app
+# EKS Auto Mode will automatically provision nodes as needed
+# Check pod status
+kubectl get pods -n three-tier-app -w
 ```
 
 ## Security Best Practices
@@ -315,7 +347,7 @@ This deployment implements several security best practices:
 ## Cost Optimization
 
 ### Resource Sizing
-- **EKS Nodes**: t3.medium instances (2 vCPU, 4GB RAM)
+- **EKS Auto Mode**: Automatic scaling from 0-1000 nodes (m5.large, m5.xlarge, m4.large)
 - **RDS Instance**: t3.micro (1 vCPU, 1GB RAM)
 - **Load Balancer**: Application Load Balancer (pay per use)
 
@@ -329,10 +361,56 @@ kubectl top pods -n three-tier-app
 aws ce get-cost-and-usage --time-period Start=2023-01-01,End=2023-01-31 --granularity MONTHLY --metrics BlendedCost
 ```
 
+## Project Structure
+
+```
+├── app.py                           # CDK app entry point (Python)
+├── requirements.txt                 # Python dependencies
+├── cdk.json                        # CDK configuration
+├── three_tier_eks/
+│   ├── __init__.py
+│   └── three_tier_eks_stack.py     # EKS Auto Mode stack
+├── backend/                        # Todo API (Docker)
+│   ├── server.js                   # Node.js/Express server
+│   ├── package.json               # Dependencies
+│   └── Dockerfile                 # Backend container
+├── frontend/                       # Todo Frontend (Docker)
+│   ├── index.html                 # Todo UI
+│   ├── nginx.conf                 # Nginx configuration
+│   └── Dockerfile                 # Frontend container
+├── k8s-manifests/                  # AWS EKS manifests
+│   ├── namespace.yaml
+│   ├── database-secret.yaml
+│   ├── backend-deployment.yaml
+│   ├── frontend-deployment.yaml
+│   └── ingress.yaml
+├── k8s-local/                      # Local development manifests
+│   ├── namespace.yaml
+│   ├── postgres.yaml
+│   ├── backend.yaml
+│   ├── frontend.yaml
+│   └── ingress.yaml
+├── scripts/                        # Deployment scripts
+│   ├── setup-local-dev.sh
+│   ├── cleanup-local-dev.sh
+│   ├── install-alb-controller.sh
+│   └── deploy-app.sh
+├── skaffold.yaml                   # Local development workflow
+├── kind-config.yaml               # Local Kubernetes cluster
+└── LOCAL_DEVELOPMENT.md           # Local dev guide
+```
+
 ## Cleanup
 
 To avoid ongoing AWS charges, clean up the resources:
 
+### Local Development Cleanup
+```bash
+# Stop local development
+./scripts/cleanup-local-dev.sh
+```
+
+### AWS Resources Cleanup
 ```bash
 # Delete the Kubernetes application
 kubectl delete namespace three-tier-app
